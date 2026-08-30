@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """Парсер последних верифицированных контрактов с Etherscan /contractsVerified."""
 
@@ -23,7 +22,7 @@ OUTPUT_CSV = os.getenv("OUTPUT_CSV", "data/contracts.csv")
 MAX_PAGES = int(os.getenv("MAX_PAGES", "3"))
 MIN_DELAY = 2.0
 MAX_DELAY = 5.0
-MAX_RETRIES = 4
+MAX_RETRIES = 3
 
 USER_AGENTS: tuple[str, ...] = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -41,11 +40,10 @@ USER_AGENTS: tuple[str, ...] = (
 )
 
 IMPERSONATE_TARGETS: tuple[str, ...] = (
-    "chrome131",
     "chrome124",
+    "chrome123",
     "chrome120",
     "chrome110",
-    "chrome",
     "edge101",
     "safari15_5",
 )
@@ -71,6 +69,7 @@ class VerifiedContract(NamedTuple):
 def _build_headers() -> dict[str, str]:
     """Возвращает случайные антибот-заголовки с корректными Sec-Ch гедерами."""
     return {
+        "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
                   "image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
@@ -175,7 +174,6 @@ def create_anonymous_session() -> curl_requests.Session:
             continue
 
         session.headers.update(_build_headers())
-        logger.info("Сессия создана: impersonate=%s", target)
         return session
 
     logger.warning("Не удалось использовать impersonation: %s", last_error)
@@ -184,23 +182,13 @@ def create_anonymous_session() -> curl_requests.Session:
     return session
 
 
-def _warm_up(session: curl_requests.Session) -> None:
-    """Прогрев: получает куки Cloudflare с главной страницы."""
-    try:
-        resp = session.get("https://etherscan.io/", timeout=30)
-        logger.info("Прогрев: HTTP %s", resp.status_code)
-    except Exception as exc:
-        logger.warning("Прогрев: ошибка %s", exc)
-
-
 def fetch_page(page: int) -> str | None:
     """Загружает HTML страницы /contractsVerified с ретраями и задержками."""
     params = {"ps": 100, "p": page}
-    session = create_anonymous_session()
-    _warm_up(session)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
+            session = create_anonymous_session()
             response = session.get(BASE_URL, params=params, timeout=30)
 
             if response.status_code != 200:
@@ -210,7 +198,6 @@ def fetch_page(page: int) -> str | None:
                 )
                 if attempt < MAX_RETRIES:
                     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-                    _warm_up(session)
                 continue
 
             html = response.text
@@ -221,7 +208,6 @@ def fetch_page(page: int) -> str | None:
                 )
                 if attempt < MAX_RETRIES:
                     time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-                    _warm_up(session)
                 continue
 
             return html
@@ -233,7 +219,6 @@ def fetch_page(page: int) -> str | None:
             )
             if attempt < MAX_RETRIES:
                 time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-                _warm_up(session)
 
     return None
 
@@ -310,4 +295,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
